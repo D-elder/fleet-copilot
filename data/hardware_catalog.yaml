@@ -1,0 +1,17 @@
+# Hardware upgrade catalog.
+#
+# ASSUMPTION: this file is NOT part of the telemetry. It encodes which components can be upgraded on each
+# model_identifier seen in the dataset, from general public spec knowledge (Apple silicon uses soldered unified
+# memory and storage; ThinkPad X1 Carbon RAM is soldered but its SSD is replaceable; Dell XPS 15 has SODIMM RAM
+# and M.2 SSDs). Validate against your own asset records before relying on it.
+#
+# options_gb are the sizes an upgrade order may specify (1 TB = 1024 GB, matching the telemetry).
+models:
+  "Mac15,7":   {name: "MacBook Pro (M3 Pro)",      ram: {upgradeable: false}, storage: {upgradeable: false}}
+  "Mac14,5":   {name: "MacBook Pro (M2 Pro)",      ram: {upgradeable: false}, storage: {upgradeable: false}}
+  "Mac14,2":   {name: "MacBook Air (M2)",          ram: {upgradeable: false}, storage: {upgradeable: false}}
+  "Mac14,3":   {name: "Mac mini (M2)",             ram: {upgradeable: false}, storage: {upgradeable: false}}
+  "21CB":      {name: "ThinkPad X1 Carbon",        ram: {upgradeable: false},
+                storage: {upgradeable: true, options_gb: [2048, 4096]}}
+  "XPS-9530":  {name: "Dell XPS 15",               ram: {upgradeable: true, options_gb: [32, 64]},
+                storage: {upgradeable: true, options_gb: [1024, 2048, 4096]}}

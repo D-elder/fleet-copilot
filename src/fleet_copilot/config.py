@@ -23,10 +23,19 @@ LOW_DISK_FREE_PCT = 10.0
 RAM_PRESSURE_USED_PCT = 85.0
 RAM_PRESSURE_MIN_SHARE = 0.5    # share of snapshots above the threshold ...
 RAM_PRESSURE_MIN_DAYS = 14      # ... over a window at least this long
+RAM_INTERMITTENT_MIN_SHARE = 0.25  # between this and RAM_PRESSURE_MIN_SHARE => "intermittent", not actionable
+STORAGE_LOW_FREE_PCT = LOW_DISK_FREE_PCT
+STORAGE_MIN_SHARE = 0.5         # share of snapshots below the low-disk threshold (and latest also below it)
+STORAGE_DECLINE_PP = 5.0        # reported as "declining" when free space fell by at least this many points
+MIN_READINGS = 10               # minimum readings (any trend) before a series is trusted
+TREND_MIN_SPAN_DAYS = 14
 BATTERY_MIN_READINGS = 10
 BATTERY_MIN_SPAN_DAYS = 14
 BATTERY_EOL_CAPACITY_DROP_PCT = 3.0
 BATTERY_EOL_MIN_CYCLES = 900
+MIN_TREND_EVIDENCE = 3          # snapshots an action must cite when it rests on a trend
+
+CATALOG_PATH = DATA_DIR / "hardware_catalog.yaml"
 
 # --- Form factor (derived from model name; the dataset has no explicit field) ---
 FORM_FACTOR_BY_MODEL_PREFIX = {
@@ -38,7 +47,7 @@ FORM_FACTOR_BY_MODEL_PREFIX = {
 
 # --- LLM (OpenRouter) --------------------------------------------------------
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL = os.getenv("FLEET_MODEL", "anthropic/claude-sonnet-5.5")
+MODEL = os.getenv("FLEET_MODEL", "deepseek/deepseek-v4-pro")
 PROVIDER = os.getenv("FLEET_PROVIDER", "")
 TEMPERATURE = float(os.getenv("FLEET_TEMPERATURE", "0"))
 SEED = int(os.getenv("FLEET_SEED", "7"))

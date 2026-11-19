@@ -14,7 +14,7 @@ from .conftest import ACME, GLOBEX
 
 DEVICE = "1LYSSFD074BB"   # Acme MacBook Pro; screen_lock failing in its latest snapshot, disk_encryption passing
 ACTION = "open_remediation_ticket"
-ARGS = {"device_id": DEVICE, "check_id": "screen_lock", "note": "Enforce screen lock."}
+ARGS = {"device_id": DEVICE, "check_id": "screen_lock"}   # identifiers only; the app writes the note
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def events(conn, name):
 
 
 def proposed(conn, session):
-    r = actions.propose(conn, session, ACTION, ARGS, [latest_id(conn)], "screen_lock failing now")
+    r = actions.propose(conn, session, ACTION, ARGS, [latest_id(conn)])
     assert r.status == "pending", r.reasons
     return r
 
@@ -92,7 +92,7 @@ def test_stale_device_cannot_support_a_ticket(conn, approver):
 
 def test_identical_proposal_is_idempotent(conn, approver):
     a = proposed(conn, approver)
-    b = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)], "again")
+    b = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)])
     assert b.proposal_id == a.proposal_id and b.duplicate
     assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1
 

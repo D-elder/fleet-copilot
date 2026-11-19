@@ -16,7 +16,7 @@ def describe() -> dict[str, Any]:
             "temperature": config.TEMPERATURE, "seed": config.SEED, "base_url": config.OPENROUTER_BASE_URL}
 
 
-def make_llm_invoke(tools: Sequence[Any]) -> LlmInvoke:
+def _chat():
     from langchain_openai import ChatOpenAI
 
     key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -25,7 +25,31 @@ def make_llm_invoke(tools: Sequence[Any]) -> LlmInvoke:
     extra_body: dict[str, Any] = {}
     if config.PROVIDER:  # pin the upstream provider so repeated runs hit the same backend
         extra_body["provider"] = {"order": [config.PROVIDER], "allow_fallbacks": False}
-    chat = ChatOpenAI(model=config.MODEL, base_url=config.OPENROUTER_BASE_URL, api_key=key,
+    return ChatOpenAI(model=config.MODEL, base_url=config.OPENROUTER_BASE_URL, api_key=key,
                       temperature=config.TEMPERATURE, seed=config.SEED, max_retries=2, timeout=120,
                       extra_body=extra_body or None)
-    return chat.bind_tools(list(tools)).invoke  # type: ignore[return-value]
+
+
+def make_llm_invoke(tools: Sequence[Any]) -> LlmInvoke:
+    return _chat().bind_tools(list(tools)).invoke  # type: ignore[return-value]
+
+
+def make_plan_invoke() -> LlmInvoke:
+    """Planning call: submit_plan is the ONLY tool offered, and PLAN_INSTRUCTION tells the model to call it.
+
+    tool_choice is deliberately not forced: the configured model (verified live) rejects forced tool choice with
+    "tool_choice: type 'tool' and 'any' are not supported for this model". If a model ever skips the call, the
+    plan node records "no plan" in the trace and the turn proceeds without coverage enforcement.
+    """
+    from .tools import plan_spec
+
+    return _chat().bind_tools([plan_spec()]).invoke  # type: ignore[return-value]
+
+
+def make_agent(conn, session, checkpoint_conn=None):
+    """Production wiring: a FleetAgent using the configured OpenRouter model for planning and acting."""
+    from .graph import FleetAgent
+    from .tools import ToolBox
+
+    return FleetAgent(conn, session, make_llm_invoke(ToolBox(conn, session).specs()),
+                      checkpoint_conn=checkpoint_conn, plan_invoke=make_plan_invoke())

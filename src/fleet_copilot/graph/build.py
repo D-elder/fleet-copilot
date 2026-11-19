@@ -1,10 +1,14 @@
 """Explicit agent loop (LangGraph).
 
-    START -> agent <-> tools -> validate -> respond -> approval(interrupt) -> END
-                         ^____________|  (one retry with the validator's diff)
+    START -> plan -> agent <-> tools -> coverage -> validate -> respond -> approval(interrupt) -> END
+                      ^_________|__________|            |
+                      (retry once each, with the diff)
 
-* agent     : one LLM call (tools bound; no execute tool exists).
-* tools     : dispatches tool calls through the session-bound ToolBox, records ToolResults / proposals in state.
+* plan      : one LLM call (submit_plan forced in production) -> intent, steps, evidence_needed. Stored in state.
+* agent     : one LLM call with the tools bound (there is no execute tool).
+* tools     : dispatches tool calls through the session-bound ToolBox; records ToolResults / proposals.
+* coverage  : deterministic. Every evidence_needed item of the plan must be backed by a ToolResult before the
+              answer is accepted; otherwise the agent must fetch it or call revise_plan (once).
 * validate  : deterministic claim validation of final_answer against this turn's ToolResults.
 * respond   : renders the answer from tool data (code, not the model).
 * approval  : LangGraph interrupt() pauses for a human; the decision is applied by application code (actions.py).
@@ -20,16 +24,19 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
+from pydantic import ValidationError
 
 from .. import actions, audit, config
-from ..models import Answer, ToolResult
-from ..prompts import SYSTEM_PROMPT
+from ..coverage import uncovered
+from ..models import Answer, PlanArgs, ToolResult
+from ..prompts import PLAN_INSTRUCTION, SYSTEM_PROMPT
 from ..repository import Repository
 from ..session import AccessDenied, Session
-from ..tools import ToolBox
+from ..tools import ACTION_TOOLS, ToolBox
 from ..validation import render_answer, render_fallback, validate_answer
 
-RECURSION_LIMIT = 80
+RECURSION_LIMIT = 100
+LlmInvoke = Callable[[Sequence[BaseMessage]], AIMessage]
 
 
 def _merge(a: dict | None, b: dict | None) -> dict:
@@ -39,12 +46,16 @@ def _merge(a: dict | None, b: dict | None) -> dict:
 class State(TypedDict, total=False):
     company_id: str
     messages: Annotated[list[AnyMessage], add_messages]
+    plan: dict | None
+    plan_revisions: int
     results: Annotated[dict, _merge]           # result_id -> ToolResult dump (this turn)
     proposals: Annotated[list, operator.add]   # ProposalResult dumps (+ the raw request) created this turn
     final: dict | None
     final_call_id: str | None
     validated: bool | None                     # True/False = settled, None = retrying
     validation_errors: list
+    coverage_gaps: list
+    coverage_retries: int
     retries: int
     iterations: int
     rendered: str | None
@@ -63,11 +74,17 @@ class TurnOutcome:
     state: dict[str, Any] = field(default_factory=dict)
 
 
+def _label(req: dict[str, Any]) -> str:
+    target = req.get("device_id") or req.get("employee_id")
+    detail = req.get("check_id") or req.get("component") or req.get("reason_code") or req.get("topic") or ""
+    return f"{target} / {detail}" if detail else str(target)
+
+
 class FleetAgent:
-    def __init__(self, conn: sqlite3.Connection, session: Session,
-                 llm_invoke: Callable[[Sequence[BaseMessage]], AIMessage],
-                 checkpoint_conn: sqlite3.Connection | None = None):
+    def __init__(self, conn: sqlite3.Connection, session: Session, llm_invoke: LlmInvoke,
+                 checkpoint_conn: sqlite3.Connection | None = None, plan_invoke: LlmInvoke | None = None):
         self.conn, self.session, self.llm_invoke = conn, session, llm_invoke
+        self.plan_invoke = plan_invoke or llm_invoke
         self.repo = Repository(conn, session)
         self.toolbox = ToolBox(conn, session)
         cp = checkpoint_conn or sqlite3.connect(":memory:", check_same_thread=False)
@@ -76,6 +93,24 @@ class FleetAgent:
     # ------------------------------------------------------------------ graph
     def _build(self, saver: SqliteSaver):
         session, conn, toolbox = self.session, self.conn, self.toolbox
+
+        def plan(state: State) -> dict:
+            ai = self.plan_invoke(list(state["messages"]) + [HumanMessage(PLAN_INSTRUCTION)])
+            call = next((tc for tc in (ai.tool_calls or []) if tc["name"] == "submit_plan"), None)
+            try:
+                if call is None:
+                    raise ValueError("model did not call submit_plan")
+                parsed = PlanArgs(**call["args"])
+            except (ValidationError, ValueError) as e:
+                # No plan => no coverage enforcement; recorded so evals and /trace can flag it.
+                return {"plan": None, "trace": [{"node": "plan", "error": str(e)[:300]}]}
+            dumped = parsed.model_dump()
+            note = HumanMessage("Recorded plan (follow it; every evidence_needed item must be gathered before "
+                                "final_answer, or revised once with revise_plan):\n" + parsed.model_dump_json())
+            return {"plan": dumped, "messages": [note],
+                    "trace": [{"node": "plan", "intent": parsed.intent, "steps": dumped["steps"],
+                               "evidence_needed": dumped["evidence_needed"],
+                               "proposes_action": parsed.proposes_action}]}
 
         def agent(state: State) -> dict:
             ai = self.llm_invoke(state["messages"])
@@ -94,6 +129,8 @@ class FleetAgent:
             trace: list[dict] = []
             final: dict | None = None
             final_call_id: str | None = None
+            update: dict[str, Any] = {}
+            cur_plan, revisions = state.get("plan"), state.get("plan_revisions", 0)
             for tc in sorted(ai.tool_calls, key=lambda c: c["name"] == "final_answer"):  # final_answer last
                 out = toolbox.dispatch(tc["name"], tc["args"])
                 if out.trace:
@@ -105,18 +142,49 @@ class FleetAgent:
                         msgs.append(ToolMessage("ERROR: final_answer may be called only once", tool_call_id=tc["id"],
                                                 name=tc["name"]))
                     continue
+                if out.revision is not None:
+                    if cur_plan is None:
+                        content = "ERROR: there is no recorded plan to revise"
+                    elif revisions >= 1:
+                        content = "ERROR: the plan may be revised only once"
+                    else:
+                        cur_plan = {**cur_plan, "evidence_needed": [n.model_dump() for n in out.revision.evidence_needed],
+                                    "revision_reason": out.revision.reason}
+                        revisions += 1
+                        update.update({"plan": cur_plan, "plan_revisions": revisions})
+                        content = out.content
+                        trace.append({"node": "plan", "revised": True, "reason": out.revision.reason,
+                                      "evidence_needed": cur_plan["evidence_needed"]})
+                    msgs.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
+                    continue
                 msgs.append(ToolMessage(content=out.content, tool_call_id=tc["id"], name=tc["name"]))
                 if out.result is not None:
                     results[out.result.result_id] = out.result.model_dump()
                 if out.proposal is not None:
-                    proposals.append({**out.proposal.model_dump(), "request": tc["args"]})
+                    proposals.append({**out.proposal.model_dump(), "action": tc["name"], "request": tc["args"]})
             return {"messages": msgs, "results": results, "proposals": proposals, "final": final,
-                    "final_call_id": final_call_id, "trace": trace}
+                    "final_call_id": final_call_id, "trace": trace, **update}
 
         def after_tools(state: State) -> str:
             if state.get("final"):
-                return "validate"
+                return "coverage"
             return "give_up" if state.get("iterations", 0) >= config.MAX_AGENT_ITERATIONS else "agent"
+
+        def coverage(state: State) -> dict:
+            p = state.get("plan")
+            results = {k: ToolResult(**v) for k, v in state.get("results", {}).items()}
+            gaps = uncovered(p["evidence_needed"], results) if p else []
+            if gaps and state.get("coverage_retries", 0) < 1 and state.get("iterations", 0) < config.MAX_AGENT_ITERATIONS:
+                body = ("Plan coverage incomplete: no tool result yet backs these planned evidence items: "
+                        + ", ".join(gaps) + ". Fetch them with tools, or call revise_plan (once) if they are not "
+                        "needed, then call final_answer again.")
+                return {"messages": [ToolMessage(body, tool_call_id=state["final_call_id"], name="final_answer")],
+                        "final": None, "coverage_gaps": gaps, "coverage_retries": state.get("coverage_retries", 0) + 1,
+                        "trace": [{"node": "coverage", "gaps": gaps, "retry": True}]}
+            return {"coverage_gaps": gaps, "trace": [{"node": "coverage", "gaps": gaps, "retry": False}]}
+
+        def after_coverage(state: State) -> str:
+            return "validate" if state.get("final") else "agent"
 
         def validate(state: State) -> dict:
             answer = Answer(**state["final"])
@@ -144,19 +212,20 @@ class FleetAgent:
                 text = render_answer(Answer(**state["final"]), results)
             else:
                 text = render_fallback(results, state.get("validation_errors", []))
-            prop_lines = []
+            if state.get("coverage_gaps"):
+                text += ("\n\nNote: planned evidence was not gathered: " + ", ".join(state["coverage_gaps"])
+                         + " (answer was still verified against the tool results that exist).")
+            lines = []
             for p in state.get("proposals", []):
-                req = p.get("request", {})
-                label = f"{req.get('device_id')} / {req.get('check_id')}"
+                label = f"{p.get('action')} ({_label(p.get('request', {}))})"
                 if p["status"] == "refused":
-                    prop_lines.append(f"  - REFUSED ({label}): " + "; ".join(p.get("reasons", [])))
+                    lines.append(f"  - REFUSED {label}: " + "; ".join(p.get("reasons", [])))
                 elif p.get("duplicate"):
-                    prop_lines.append(f"  - {p['proposal_id']} ({label}) already exists, status={p['status']}")
+                    lines.append(f"  - {p['proposal_id']} {label} already exists, status={p['status']}")
                 else:
-                    prop_lines.append(f"  - {p['proposal_id']} open_remediation_ticket ({label}) "
-                                      f"status={p['status']} - NOT executed")
-            if prop_lines:
-                text += "\n\nProposed actions:\n" + "\n".join(prop_lines)
+                    lines.append(f"  - {p['proposal_id']} {label} status={p['status']} - NOT executed")
+            if lines:
+                text += "\n\nProposed actions:\n" + "\n".join(lines)
             return {"rendered": text}
 
         def after_respond(state: State) -> str:
@@ -165,9 +234,9 @@ class FleetAgent:
 
         def give_up(state: State) -> dict:
             results = {k: ToolResult(**v) for k, v in state.get("results", {}).items()}
-            text = (f"Stopped after {state.get('iterations', 0)} steps without a verified answer.\n\n"
-                    + "\n\n".join(render_fallback(results, ["iteration budget exhausted"]).split("\n\n")[1:]))
-            return {"rendered": text, "validated": False}
+            fallback = render_fallback(results, ["iteration budget exhausted"]).split("\n\n")[1:]
+            return {"rendered": f"Stopped after {state.get('iterations', 0)} steps without a verified answer.\n\n"
+                                + "\n\n".join(fallback), "validated": False}
 
         def approval(state: State) -> dict:
             if state["company_id"] != session.company_id:  # belt and braces; resume is also scope-checked
@@ -195,12 +264,14 @@ class FleetAgent:
             return {"decisions": decisions, "trace": [{"node": "approval", "decisions": decisions}]}
 
         g = StateGraph(State)
-        for name, fn in [("agent", agent), ("tools", tools), ("validate", validate), ("respond", respond),
-                         ("give_up", give_up), ("approval", approval)]:
+        for name, fn in [("plan", plan), ("agent", agent), ("tools", tools), ("coverage", coverage),
+                         ("validate", validate), ("respond", respond), ("give_up", give_up), ("approval", approval)]:
             g.add_node(name, fn)
-        g.add_edge(START, "agent")
+        g.add_edge(START, "plan")
+        g.add_edge("plan", "agent")
         g.add_edge("agent", "tools")
-        g.add_conditional_edges("tools", after_tools, {"validate": "validate", "give_up": "give_up", "agent": "agent"})
+        g.add_conditional_edges("tools", after_tools, {"coverage": "coverage", "give_up": "give_up", "agent": "agent"})
+        g.add_conditional_edges("coverage", after_coverage, {"validate": "validate", "agent": "agent"})
         g.add_conditional_edges("validate", after_validate, {"agent": "agent", "respond": "respond"})
         g.add_conditional_edges("respond", after_respond, {"approval": "approval", END: END})
         g.add_edge("give_up", END)
@@ -221,13 +292,15 @@ class FleetAgent:
     def ask(self, question: str, thread_id: str | None = None) -> TurnOutcome:
         thread_id = thread_id or f"{self.session.company_id}:{uuid.uuid4().hex[:8]}"
         self._assert_scope(thread_id)
+        self.toolbox.set_request(question)   # targets the admin named: actions may not be redirected elsewhere
         audit.record(self.conn, company_id=self.session.company_id, actor=self.session.admin_id,
                      event="question_asked", details={"thread_id": thread_id, "question": question})
         init: State = {
             "company_id": self.session.company_id,
             "messages": [SystemMessage(SYSTEM_PROMPT.format(company_id=self.session.company_id,
                                                            as_of=self.repo.as_of())), HumanMessage(question)],
-            "results": {}, "proposals": [], "final": None, "retries": 0, "iterations": 0, "trace": [],
+            "plan": None, "plan_revisions": 0, "results": {}, "proposals": [], "final": None, "retries": 0,
+            "coverage_retries": 0, "coverage_gaps": [], "iterations": 0, "trace": [],
         }
         self.graph.invoke(init, self._cfg(thread_id))
         return self._outcome(thread_id)

@@ -226,6 +226,67 @@ class Repository:
             window=Window(start=min(starts) if starts else None, end=self.as_of()), as_of=self.as_of(),
             population_checked=population, count=len(rows), rows=rows, excluded=excluded, notes=notes)
 
+    # --- fleet_overview -----------------------------------------------------
+    def fleet_overview(self) -> ToolResult:
+        """Every device's current state plus aggregate counts (non-stale devices only; stale ones are listed)."""
+        base = self.query_devices(DeviceFilters())
+        from collections import Counter
+
+        fails: Counter[str] = Counter()
+        for row in base.rows:
+            for f in row.values["failing_checks"]:
+                fails[f["check_id"]] += 1
+        summary = {
+            "devices_in_company": len(base.population_checked),
+            "devices_current": base.count,
+            "devices_stale": len(base.excluded),
+            "by_model": dict(Counter(r.values["model"] for r in base.rows)),
+            "by_os": dict(Counter(r.values["os"] for r in base.rows)),
+            "by_form_factor": dict(Counter(r.values["form_factor"] for r in base.rows)),
+            "devices_failing_each_check": dict(fails),
+        }
+        filters: dict[str, Any] = {}
+        return base.model_copy(update={
+            "tool": "fleet_overview", "filters": filters, "summary": summary,
+            "result_id": make_result_id("fleet_overview", self.company_id, filters, self.as_of())})
+
+    # --- get_device ---------------------------------------------------------
+    def get_device(self, device_id: str) -> ToolResult:
+        hist = self.history(device_id)
+        filters = {"device_id": device_id}
+        rid = make_result_id("get_device", self.company_id, filters, self.as_of())
+        if not hist:  # unknown OR another company's device: same answer
+            return ToolResult(result_id=rid, tool="get_device", company_id=self.company_id, filters=filters,
+                              window=Window(end=self.as_of()), as_of=self.as_of(), population_checked=[], count=0,
+                              rows=[], notes=[f"device {device_id!r} not found in this company"])
+        s = hist[-1]
+        comp = self.compliance(s.snapshot_id)
+        disk = [h.disk_free_pct for h in hist if h.disk_free_pct is not None]
+        mem = [h.mem_used_pct for h in hist if h.mem_used_pct is not None]
+        values = {
+            "employee_id": s.employee_id, "model": s.model_name, "model_identifier": s.model_identifier,
+            "form_factor": form_factor(s.model_name), "os": f"{s.os_name} {s.os_version}",
+            "ram_gb": round(s.mem_total_bytes / 2**30) if s.mem_total_bytes else None,
+            "disk_gb": round(s.disk_size_bytes / 2**30) if s.disk_size_bytes else None,
+            "disk_free_pct": s.disk_free_pct, "mem_used_pct": s.mem_used_pct,
+            "battery": (None if s.battery_present is None else
+                        {"condition": s.battery_condition, "cycles": s.battery_cycles,
+                         "full_charge_capacity": s.battery_full_charge}),
+            "failing_checks": [{"check_id": c["check_id"], "severity": c["severity"]}
+                               for c in comp if c["status"] == "fail"],
+            "software": self.software(s.snapshot_id),
+            "history": {"snapshots": len(hist), "first": hist[0].collected_at, "last": s.collected_at,
+                        "disk_free_pct_min_max": [min(disk), max(disk)] if disk else None,
+                        "mem_used_pct_min_max": [min(mem), max(mem)] if mem else None},
+        }
+        notes = ([f"stale: last snapshot is {self.hours_behind(s):.0f}h before as-of"] if self.is_stale(s) else [])
+        return ToolResult(
+            result_id=rid, tool="get_device", company_id=self.company_id, filters=filters,
+            window=Window(start=hist[0].collected_at, end=self.as_of()), as_of=self.as_of(),
+            population_checked=[device_id], count=1,
+            rows=[ResultRow(device_id=device_id, snapshot_id=s.snapshot_id, collected_at=s.collected_at,
+                            values=values)], notes=notes)
+
     def _mismatch_reason(self, s: Snapshot, f: DeviceFilters, threshold: tuple[int, ...] | None) -> str | None:
         """None => device matches. Reasons starting 'not '/'no ' are reported as exclusions (unknown / n.a.);
         other reasons are ordinary non-matches."""

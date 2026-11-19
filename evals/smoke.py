@@ -17,11 +17,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fleet_copilot import actions, audit, config, db, llm as llm_mod
+from fleet_copilot import actions, audit, config, db, llm as llm_mod, notes
 from fleet_copilot.cli import Repl
 from fleet_copilot.graph import FleetAgent
 from fleet_copilot.session import Session
-from fleet_copilot.tools import ToolBox
 
 COMPANY, ADMIN, TARGET, CHECK = "acme-001", "admin-acme-1", "1LYSSFD074BB", "screen_lock"
 QUESTION = (f"Which devices at Acme are currently failing the {CHECK} compliance check? "
@@ -60,15 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     conn = db.bootstrap(db_path)
     session = Session.for_admin(conn, ADMIN, COMPANY)
 
+    cp = sqlite3.connect(":memory:", check_same_thread=False)
     if args.fake:
-        from tests.fakes import ScriptedLLM, ai, call, final_from_last_result, ticket_for
-        model = ScriptedLLM([ai(call("query_devices", {"failing_check": CHECK})), ticket_for(TARGET, CHECK),
+        from tests.fakes import ScriptedLLM, ai, call, final_from_last_result, need, plan, ticket_for
+        model = ScriptedLLM([plan("screen_lock failures + ticket", [need("devices_state")], proposes=True),
+                             ai(call("query_devices", {"failing_check": CHECK})), ticket_for(TARGET, CHECK),
                              final_from_last_result("Devices currently failing screen_lock are listed below.")])
         meta = {"mode": "FAKE (scripted model - rehearsal only)"}
+        agent = FleetAgent(conn, session, model, checkpoint_conn=cp)
     else:
-        model = llm_mod.make_llm_invoke(ToolBox(conn, session).specs())
         meta = {"mode": "LIVE", **llm_mod.describe()}
-    agent = FleetAgent(conn, session, model, checkpoint_conn=sqlite3.connect(":memory:", check_same_thread=False))
+        agent = llm_mod.make_agent(conn, session, checkpoint_conn=cp)
 
     transcript: list[str] = []
 
@@ -125,6 +126,13 @@ def main(argv: list[str] | None = None) -> int:
         ("Ticket proposed for the target/check with the current failing snapshot as evidence",
          prop.get("args", {}).get("device_id") == TARGET and prop.get("args", {}).get("check_id") == CHECK
          and expected.get(TARGET) in prop.get("evidence", []), f"proposal={pid} evidence={prop.get('evidence')}"),
+        ("Ticket note is application-generated from validated facts (device, check, snapshot timestamp)",
+         prop.get("args", {}).get("note") == notes.ticket_note(TARGET, CHECK, expected.get(TARGET, "@").split("@", 1)[1])
+         and "polic" not in json.dumps(prop).lower(), f"note={prop.get('args', {}).get('note')!r}"),
+        ("A plan was recorded and every planned evidence item was gathered",
+         bool(state.get("plan")) and not state.get("coverage_gaps"),
+         f"intent={(state.get('plan') or {}).get('intent')!r} needs="
+         f"{[n['kind'] for n in (state.get('plan') or {}).get('evidence_needed', [])]} gaps={state.get('coverage_gaps')}"),
         ("Graph paused for approval with the proposal still pending", at_pause.get("statuses") == ["pending"],
          f"statuses at pause={at_pause.get('statuses')}"),
         ("Outbox EMPTY before approval", at_pause.get("outbox") == 0, f"outbox rows at pause={at_pause.get('outbox')}"),

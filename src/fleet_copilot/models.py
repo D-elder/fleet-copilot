@@ -46,9 +46,10 @@ class Window(BaseModel):
 
 class ResultRow(BaseModel):
     device_id: str
-    snapshot_id: str
+    snapshot_id: str            # the device's latest snapshot at the time of the query
     collected_at: str
     values: dict[str, Any] = Field(default_factory=dict)
+    evidence_snapshot_ids: list[str] = Field(default_factory=list)  # trend findings: the snapshots behind them
 
 
 class Excluded(BaseModel):
@@ -70,6 +71,7 @@ class ToolResult(BaseModel):
     rows: list[ResultRow]
     excluded: list[Excluded] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)  # aggregates (fleet_overview)
 
     @property
     def device_ids(self) -> list[str]:
@@ -107,6 +109,43 @@ class Answer(BaseModel):
 
     summary: str = Field(description="short prose answer; may only mention devices that appear in claims")
     claims: list[Claim] = Field(default_factory=list)
+
+
+EvidenceKind = Literal["devices_state", "fleet_overview", "device_detail",
+                       "trend_battery", "trend_memory", "trend_storage", "trend_compliance"]
+TrendKind = Literal["battery_health", "memory_pressure", "storage", "compliance_drift"]
+
+
+class EvidenceNeed(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    kind: EvidenceKind
+    device_id: str | None = Field(default=None, description="set for device_detail, or to scope a trend to one device")
+
+
+class PlanStep(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    tool: str
+    purpose: str
+
+
+class PlanArgs(BaseModel):
+    """The agent's plan. evidence_needed is enforced later by the deterministic coverage check."""
+
+    model_config = {"extra": "forbid"}
+
+    intent: str = Field(description="one sentence: what the admin wants")
+    steps: list[PlanStep] = Field(default_factory=list)
+    evidence_needed: list[EvidenceNeed] = Field(default_factory=list)
+    proposes_action: bool = False
+
+
+class RevisePlanArgs(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    reason: str
+    evidence_needed: list[EvidenceNeed]
 
 
 class ProposalResult(BaseModel):

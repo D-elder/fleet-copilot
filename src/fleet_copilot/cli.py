@@ -18,6 +18,7 @@ from .session import AccessDenied, Session
 
 HELP = """Commands:
   <question>            ask the copilot (answers are validated against tool results)
+  /trace                show the full plan / tool-call / coverage / validator trace of the last question
   /evidence <snap_id>   show the raw telemetry snapshot behind a citation
   /proposals            list this company's proposals and their status
   /approve <proposal>   approve (and execute) a pending proposal; safe to repeat
@@ -35,6 +36,7 @@ class Repl:
         self.agent, self.conn, self.session = agent, conn, session
         self.input_fn, self.out, self.echo = input_fn, out, echo
         self.repo = Repository(conn, session)
+        self.last_outcome: TurnOutcome | None = None
 
     # -- main loop -------------------------------------------------------------
     def banner(self) -> None:
@@ -45,7 +47,7 @@ class Repl:
         self.banner()
         while True:
             try:
-                line = self.input_fn("fleet> ").strip()
+                line = self.input_fn("fleet> ").lstrip("﻿").strip()  # piped input can start with a BOM
             except (EOFError, StopIteration):
                 break
             if not line:
@@ -62,7 +64,7 @@ class Repl:
             cmd, _, arg = line.partition(" ")
             fn = {"/help": lambda a: self.out(HELP), "/evidence": self.evidence, "/proposals": self.proposals,
                   "/approve": lambda a: self.decide(a, "approve"), "/reject": lambda a: self.decide(a, "reject"),
-                  "/outbox": self.outbox, "/audit": self.audit}.get(cmd)
+                  "/outbox": self.outbox, "/audit": self.audit, "/trace": self.trace}.get(cmd)
             if fn is None:
                 self.out(f"Unknown command {cmd}. Try /help.")
             else:
@@ -73,6 +75,7 @@ class Repl:
     # -- questions + approval ----------------------------------------------------
     def ask(self, question: str) -> TurnOutcome:
         outcome = self.agent.ask(question)
+        self.last_outcome = outcome
         self._show_trace(outcome)
         self.out("\n" + outcome.rendered)
         while outcome.pending:
@@ -89,20 +92,63 @@ class Repl:
             decision = "approve" if answer in ("y", "yes") else "reject"
             outcome = self.agent.resume(outcome.thread_id, decision, p["payload_hash"])
             self._show_decision(p["proposal_id"])
+        self.last_outcome = outcome
         return outcome
+
+    @staticmethod
+    def _need(n: dict[str, Any]) -> str:
+        return n["kind"] + (f"({n['device_id']})" if n.get("device_id") else "")
+
+    def _trace_lines(self, outcome: TurnOutcome, verbose: bool) -> list[str]:
+        lines: list[str] = []
+        for t in outcome.trace:
+            node, tool = t.get("node"), t.get("tool")
+            if node == "plan" and t.get("revised"):
+                lines.append(f"  plan REVISED: {t['reason']} -> needs "
+                             f"{', '.join(self._need(n) for n in t['evidence_needed']) or '(nothing)'}")
+            elif node == "plan" and "error" in t:
+                lines.append(f"  plan: none recorded ({t['error']})")
+            elif node == "plan":
+                lines.append(f"  plan: {t['intent']}")
+                lines.append("    needs: " + (", ".join(self._need(n) for n in t["evidence_needed"]) or "(nothing)"))
+                if verbose:
+                    lines += [f"    step: {s['tool']} - {s['purpose']}" for s in t["steps"]]
+                    lines.append(f"    proposes_action: {t['proposes_action']}")
+            elif node == "coverage":
+                lines.append("  coverage: " + ("all planned evidence gathered" if not t["gaps"] else
+                                               f"MISSING {', '.join(t['gaps'])}" + (" -> sent back to agent" if t["retry"]
+                                                                                    else " (budget spent)")))
+            elif node == "validate":
+                lines.append("  validator: " + ("claims verified against tool results" if t["ok"]
+                                                else f"REJECTED ({len(t['errors'])} issue(s)); retry={t['retry']}"
+                                                + (": " + "; ".join(t["errors"]) if verbose else "")))
+            elif node == "agent" and verbose:
+                lines.append(f"  agent step {t['iteration']}: calls {', '.join(t['tool_calls']) or '(none)'}")
+            elif tool and tool != "final_answer":
+                a = json.dumps(t.get("args", {}), sort_keys=True)
+                if "error" in t:
+                    lines.append(f"  tool {tool} {a} -> ERROR {t['error']}")
+                elif "proposal_id" in t:
+                    r = f" reasons={t['reasons']}" if t.get("reasons") else ""
+                    lines.append(f"  tool {tool} {a} -> {t.get('proposal_id') or '(none)'} status={t.get('status')}{r}")
+                elif tool == "revise_plan":
+                    continue
+                else:
+                    lines.append(f"  tool {tool} {a} -> {t.get('result_id')} (count={t.get('count')})")
+        return lines
 
     def _show_trace(self, outcome: TurnOutcome) -> None:
         self.out("[trace]")
-        for t in outcome.trace:
-            if t.get("tool") == "query_devices":
-                self.out(f"  tool query_devices {json.dumps(t['args'], sort_keys=True)} -> {t.get('result_id')} "
-                         f"(count={t.get('count')})")
-            elif t.get("tool") == "open_remediation_ticket":
-                self.out(f"  tool open_remediation_ticket {t.get('args', {}).get('device_id')}/"
-                         f"{t.get('args', {}).get('check_id')} -> {t.get('proposal_id')} status={t.get('status')}")
-            elif t.get("node") == "validate":
-                self.out("  validator: " + ("claims verified against tool results" if t["ok"]
-                                            else f"REJECTED ({len(t['errors'])} issue(s)); retry={t['retry']}"))
+        for line in self._trace_lines(outcome, verbose=False):
+            self.out(line)
+
+    def trace(self, _: str = "") -> None:
+        if self.last_outcome is None:
+            self.out("Nothing to trace yet: ask a question first.")
+            return
+        self.out("[full trace of the last turn]")
+        for line in self._trace_lines(self.last_outcome, verbose=True):
+            self.out(line)
 
     def _show_decision(self, proposal_id: str) -> None:
         p = actions.get_proposal(self.conn, self.session.company_id, proposal_id)
@@ -179,12 +225,10 @@ def main(argv: list[str] | None = None) -> int:
     except AccessDenied as e:
         print(f"Access denied: {e}", file=sys.stderr)
         return 2
-    from .llm import make_llm_invoke
-    from .tools import ToolBox
+    from .llm import make_agent
 
-    llm = make_llm_invoke(ToolBox(conn, session).specs())
     cp = sqlite3.connect(str(config.ROOT / "var" / "checkpoints.db"), check_same_thread=False)
-    Repl(FleetAgent(conn, session, llm, checkpoint_conn=cp), conn, session).run()
+    Repl(make_agent(conn, session, checkpoint_conn=cp), conn, session).run()
     return 0
 
 

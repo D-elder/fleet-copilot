@@ -1,6 +1,6 @@
 # Thursday slice - end-to-end evidence (PASS)
 
-Run started: 2026-11-19T09:29:25+00:00  
+Run started: 2026-11-19T10:04:14+00:00  
 mode: `LIVE`  
 model: `anthropic/claude-sonnet-5.5`  
 provider: `(openrouter default routing)`  
@@ -19,7 +19,9 @@ data as-of: `2026-06-12T11:00:00Z`
 | PASS | Answer passed claim validation (claims match tool results) | validated=True |
 | PASS | Answer's device set equals the independently computed set | claimed=['1LYSSFD074BB', '8NM23J95R5I6', 'DLT35MHGTH2D', 'DSYPSES7SKBB', 'MT7PJB7N5LRE'] |
 | PASS | Cited snapshots are exactly each device's latest snapshot | cited 5 snapshot ids |
-| PASS | Ticket proposed for the target/check with the current failing snapshot as evidence | proposal=P-6e30eae6c642 evidence=['1LYSSFD074BB@2026-06-12T09:47:00Z'] |
+| PASS | Ticket proposed for the target/check with the current failing snapshot as evidence | proposal=P-1e91f5a86261 evidence=['1LYSSFD074BB@2026-06-12T09:47:00Z'] |
+| PASS | Ticket note is application-generated from validated facts (device, check, snapshot timestamp) | note='Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.' |
+| PASS | A plan was recorded and every planned evidence item was gathered | intent='Find devices currently failing the screen_lock compliance check, then propose a screen_lock remediation ticket for device 1LYSSFD074BB.' needs=['devices_state', 'device_detail'] gaps=[] |
 | PASS | Graph paused for approval with the proposal still pending | statuses at pause=['pending'] |
 | PASS | Outbox EMPTY before approval | outbox rows at pause=0 |
 | PASS | Outbox has EXACTLY ONE entry after approval | outbox rows=1, status=executed |
@@ -34,11 +36,15 @@ Fleet Copilot | company=acme-001 admin=admin-acme-1 role=approver | data as of 2
 Type /help for commands.
 fleet> Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.
 [trace]
+  plan: Find devices currently failing the screen_lock compliance check, then propose a screen_lock remediation ticket for device 1LYSSFD074BB.
+    needs: devices_state, device_detail(1LYSSFD074BB)
   tool query_devices {"failing_check": "screen_lock"} -> R-30d419ff6b (count=5)
-  tool open_remediation_ticket 1LYSSFD074BB/screen_lock -> P-6e30eae6c642 status=pending
+  tool get_device {"device_id": "1LYSSFD074BB"} -> R-124f7a9718 (count=1)
+  tool open_remediation_ticket {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"]} -> P-1e91f5a86261 status=pending
+  coverage: all planned evidence gathered
   validator: claims verified against tool results
 
-5 devices are failing screen_lock: 1LYSSFD074BB, 8NM23J95R5I6, DLT35MHGTH2D, DSYPSES7SKBB and MT7PJB7N5LRE. I proposed a screen_lock remediation ticket for 1LYSSFD074BB (proposal P-6e30eae6c642). It is pending human approval and has not been created yet.
+5 devices are currently failing screen_lock: 1LYSSFD074BB, 8NM23J95R5I6, DLT35MHGTH2D, DSYPSES7SKBB and MT7PJB7N5LRE. I proposed a screen_lock remediation ticket for 1LYSSFD074BB (proposal P-1e91f5a86261). It is pending human approval and has not been created yet.
 
 Evidence R-30d419ff6b (query_devices)
   company: acme-001 | as of: 2026-06-12T11:00:00Z | window: 2026-06-12T08:39:00Z .. 2026-06-12T11:00:00Z
@@ -50,53 +56,59 @@ Evidence R-30d419ff6b (query_devices)
     - DSYPSES7SKBB  [DSYPSES7SKBB@2026-06-12T10:57:00Z]  MacBook Pro | macOS 15.3 | disk free 26.8% | mem used 37.3% | failing: os_up_to_date(medium), screen_lock(medium)
     - MT7PJB7N5LRE  [MT7PJB7N5LRE@2026-06-12T08:39:00Z]  MacBook Pro | macOS 14.5 | disk free 2.0% | mem used 47.6% | failing: os_up_to_date(medium), screen_lock(medium)
 
+Evidence R-124f7a9718 (get_device)
+  company: acme-001 | as of: 2026-06-12T11:00:00Z | window: 2026-05-14T09:54:00Z .. 2026-06-12T11:00:00Z
+  filters: {"device_id": "1LYSSFD074BB"}
+  matched 1 of 1 devices checked
+    - 1LYSSFD074BB  [1LYSSFD074BB@2026-06-12T09:47:00Z]  MacBook Pro (Mac15,7) | macOS 14.5 | employee emp-acme-1001 | RAM 32GB, disk 1024GB | disk free 51.0% | mem used 55.9% | battery: Normal, 532 cycles | failing: os_up_to_date(medium), screen_lock(medium) | software: 1Password, Google Chrome, Slack, Visual Studio Code, Zoom, uTorrent | history: 30 snapshots 2026-05-14T09:54:00Z .. 2026-06-12T09:47:00Z, disk free range [50.8, 56.4], mem used range [44.4, 55.9]
+
 Proposed actions:
-  - P-6e30eae6c642 open_remediation_ticket (1LYSSFD074BB / screen_lock) status=pending - NOT executed
+  - P-1e91f5a86261 open_remediation_ticket (1LYSSFD074BB / screen_lock) status=pending - NOT executed
 
 --- APPROVAL REQUIRED ----------------------------------------
-proposal : P-6e30eae6c642  (open_remediation_ticket)
-args     : {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes."}
+proposal : P-1e91f5a86261  (open_remediation_ticket)
+args     : {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}
 evidence : 1LYSSFD074BB@2026-06-12T09:47:00Z
-why      : Latest snapshot shows screen_lock failing (medium severity) on this device.
-hash     : 6e30eae6c642a59d...  (your decision is bound to this exact payload)
-Approve P-6e30eae6c642? [y/N] y
-Result: proposal P-6e30eae6c642 is now 'executed' (outbox #1)
+why      : screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.
+hash     : 1e91f5a862615c83...  (your decision is bound to this exact payload)
+Approve P-1e91f5a86261? [y/N] y
+Result: proposal P-1e91f5a86261 is now 'executed' (outbox #1)
 fleet> /proposals
-P-6e30eae6c642  executed   open_remediation_ticket  {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes."}  hash=6e30eae6c642a59d...
-fleet> /approve P-6e30eae6c642
+P-1e91f5a86261  executed   open_remediation_ticket  {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}  hash=1e91f5a862615c83...
+fleet> /approve P-1e91f5a86261
 Executed (replay: already executed, nothing new written) outbox #1
-fleet> /approve P-6e30eae6c642
+fleet> /approve P-1e91f5a86261
 Executed (replay: already executed, nothing new written) outbox #1
 fleet> /outbox
 1 outbox entry
-  #1 P-6e30eae6c642 open_remediation_ticket {"approved_by": "admin-acme-1", "check_id": "screen_lock", "device_id": "1LYSSFD074BB", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes.", "proposal_id": "P-6e30eae6c642", "type": "open_remediation_ticket"}
+  #1 P-1e91f5a86261 open_remediation_ticket {"approved_by": "admin-acme-1", "check_id": "screen_lock", "device_id": "1LYSSFD074BB", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.", "proposal_id": "P-1e91f5a86261", "type": "open_remediation_ticket"}
 fleet> /audit 60
-    1 2026-11-19T09:29:25.245Z admin-acme-1 question_asked {"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:d6593050"}
-    2 2026-11-19T09:29:31.370Z admin-acme-1 proposal_created {"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "payload_hash": "6e30eae6c642a59d14a498fb1a20f43a47c87cdab32b9064e3c3a48fd06db71f", "proposal_id": "P-6e30eae6c642"}
-    3 2026-11-19T09:29:34.305Z admin-acme-1 proposal_approved {"payload_hash": "6e30eae6c642a59d14a498fb1a20f43a47c87cdab32b9064e3c3a48fd06db71f", "proposal_id": "P-6e30eae6c642"}
-    4 2026-11-19T09:29:34.331Z admin-acme-1 action_executed {"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-6e30eae6c642"}
-    5 2026-11-19T09:29:34.381Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-6e30eae6c642", "status": "executed"}
-    6 2026-11-19T09:29:34.412Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-6e30eae6c642"}
-    7 2026-11-19T09:29:34.467Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-6e30eae6c642", "status": "executed"}
-    8 2026-11-19T09:29:34.568Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-6e30eae6c642"}
+    1 2026-11-19T10:04:14.020Z admin-acme-1 question_asked {"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:1f6b3ebc"}
+    2 2026-11-19T10:04:31.624Z admin-acme-1 proposal_created {"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
+    3 2026-11-19T10:04:35.405Z admin-acme-1 proposal_approved {"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
+    4 2026-11-19T10:04:35.424Z admin-acme-1 action_executed {"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
+    5 2026-11-19T10:04:35.455Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
+    6 2026-11-19T10:04:35.472Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
+    7 2026-11-19T10:04:35.487Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
+    8 2026-11-19T10:04:35.528Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
 ```
 
 ## Audit records (audit_log, this company)
 
 | id | ts | actor | event | details |
 |---|---|---|---|---|
-| 1 | 2026-11-19T09:29:25.245Z | admin-acme-1 | question_asked | `{"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:d6593050"}` |
-| 2 | 2026-11-19T09:29:31.370Z | admin-acme-1 | proposal_created | `{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "payload_hash": "6e30eae6c642a59d14a498fb1a20f43a47c87cdab32b9064e3c3a48fd06db71f", "proposal_id": "P-6e30eae6c642"}` |
-| 3 | 2026-11-19T09:29:34.305Z | admin-acme-1 | proposal_approved | `{"payload_hash": "6e30eae6c642a59d14a498fb1a20f43a47c87cdab32b9064e3c3a48fd06db71f", "proposal_id": "P-6e30eae6c642"}` |
-| 4 | 2026-11-19T09:29:34.331Z | admin-acme-1 | action_executed | `{"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-6e30eae6c642"}` |
-| 5 | 2026-11-19T09:29:34.381Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-6e30eae6c642", "status": "executed"}` |
-| 6 | 2026-11-19T09:29:34.412Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-6e30eae6c642"}` |
-| 7 | 2026-11-19T09:29:34.467Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-6e30eae6c642", "status": "executed"}` |
-| 8 | 2026-11-19T09:29:34.568Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-6e30eae6c642"}` |
+| 1 | 2026-11-19T10:04:14.020Z | admin-acme-1 | question_asked | `{"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:1f6b3ebc"}` |
+| 2 | 2026-11-19T10:04:31.624Z | admin-acme-1 | proposal_created | `{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
+| 3 | 2026-11-19T10:04:35.405Z | admin-acme-1 | proposal_approved | `{"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
+| 4 | 2026-11-19T10:04:35.424Z | admin-acme-1 | action_executed | `{"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
+| 5 | 2026-11-19T10:04:35.455Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
+| 6 | 2026-11-19T10:04:35.472Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
+| 7 | 2026-11-19T10:04:35.487Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
+| 8 | 2026-11-19T10:04:35.528Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
 
 ## Proposal and outbox rows
 
 ```text
-{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes."}, "company_id": "acme-001", "created_at": "2026-11-19T09:29:31.368Z", "decided_at": "2026-11-19T09:29:34.305Z", "decided_by": "admin-acme-1", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "Latest snapshot shows screen_lock failing (medium severity) on this device.", "outcome_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"note\": \"Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes.\", \"proposal_id\": \"P-6e30eae6c642\", \"type\": \"open_remediation_ticket\"}", "payload_hash": "6e30eae6c642a59d14a498fb1a20f43a47c87cdab32b9064e3c3a48fd06db71f", "proposal_id": "P-6e30eae6c642", "proposed_by": "admin-acme-1", "status": "executed"}
-{"action": "open_remediation_ticket", "company_id": "acme-001", "created_at": "2026-11-19T09:29:34.329Z", "outbox_id": 1, "payload_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"note\": \"Screen lock check is failing on this MacBook Pro (macOS 14.5). Please enable/enforce a screen lock timeout and password requirement per company policy, then verify the check passes.\", \"proposal_id\": \"P-6e30eae6c642\", \"type\": \"open_remediation_ticket\"}", "proposal_id": "P-6e30eae6c642"}
+{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "company_id": "acme-001", "created_at": "2026-11-19T10:04:31.604Z", "decided_at": "2026-11-19T10:04:35.405Z", "decided_by": "admin-acme-1", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "outcome_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261", "proposed_by": "admin-acme-1", "status": "executed"}
+{"action": "open_remediation_ticket", "company_id": "acme-001", "created_at": "2026-11-19T10:04:35.424Z", "outbox_id": 1, "payload_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "proposal_id": "P-1e91f5a86261"}
 ```
