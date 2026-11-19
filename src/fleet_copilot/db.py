@@ -49,6 +49,42 @@ CREATE TABLE IF NOT EXISTS admins(
   role TEXT NOT NULL CHECK(role IN ('viewer','approver'))
 );
 
+CREATE TABLE IF NOT EXISTS proposals(
+  proposal_id TEXT PRIMARY KEY,                -- 'P-' + first 12 hex of payload_hash (idempotent proposing)
+  company_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  args_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  justification TEXT NOT NULL DEFAULT '',
+  payload_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected','executed','failed')),
+  proposed_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  decided_by TEXT,
+  decided_at TEXT,
+  outcome_json TEXT
+);
+
+-- One decision per proposal, bound to the exact payload the reviewer saw.
+CREATE TABLE IF NOT EXISTS approvals(
+  approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id TEXT NOT NULL UNIQUE REFERENCES proposals(proposal_id),
+  payload_hash TEXT NOT NULL,
+  reviewer_id TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK(decision IN ('approved','rejected')),
+  decided_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Simulated downstream system. UNIQUE(proposal_id) = at most one side effect per proposal, ever.
+CREATE TABLE IF NOT EXISTS outbox(
+  outbox_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id TEXT NOT NULL UNIQUE REFERENCES proposals(proposal_id),
+  company_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE TABLE IF NOT EXISTS audit_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

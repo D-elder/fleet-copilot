@@ -88,3 +88,30 @@ def make_result_id(tool: str, company_id: str, filters: dict[str, Any], as_of: s
 
 def make_snapshot_id(device_id: str, collected_at: str) -> str:
     return f"{device_id}@{collected_at}"
+
+
+class Claim(BaseModel):
+    """One verifiable statement in the agent's final answer. Checked against the ToolResult it cites."""
+
+    model_config = {"extra": "forbid"}
+
+    result_id: str = Field(description="result_id of the tool result that supports this claim")
+    device_ids: list[str] = Field(description="devices the claim is about (empty for a zero-result claim)")
+    count: int = Field(description="number of devices the claim states")
+    snapshot_ids: list[str] = Field(description="snapshot_ids (from that result) that support the claimed devices")
+    subset: bool = Field(default=False, description="true only if the claim deliberately names a subset of the result")
+
+
+class Answer(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    summary: str = Field(description="short prose answer; may only mention devices that appear in claims")
+    claims: list[Claim] = Field(default_factory=list)
+
+
+class ProposalResult(BaseModel):
+    proposal_id: str | None = None
+    status: Literal["pending", "refused", "approved", "rejected", "executed", "failed"]
+    reasons: list[str] = Field(default_factory=list)
+    payload_hash: str | None = None
+    duplicate: bool = False

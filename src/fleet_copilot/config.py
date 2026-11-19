@@ -4,7 +4,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(ROOT / ".env", override=False)  # gitignored; holds OPENROUTER_API_KEY locally
 DATA_DIR = ROOT / "data"
 DATASET_PATH = DATA_DIR / "device-telemetry-dataset.ndjson"
 ADMINS_PATH = DATA_DIR / "admins.yaml"

@@ -1,0 +1,212 @@
+"""Proposal store, approval, and execution.
+
+Guarantees:
+  * the LLM can only *propose*; execution is application code reached after a human decision;
+  * a decision is bound to (proposal, company, payload hash, authorised reviewer);
+  * execution = ONE transaction: re-check policy, compare-and-set status, insert the outbox row, write the audit
+    row. Any failure rolls everything back; replays return the recorded outcome and add nothing.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any, Iterator
+
+from . import audit, policy
+from .models import ProposalResult
+from .repository import Repository
+from .session import Session
+
+
+def canonical_hash(company_id: str, action: str, args: dict[str, Any], evidence: list[str]) -> str:
+    blob = json.dumps({"company_id": company_id, "action": action, "args": args, "evidence": sorted(evidence)},
+                      sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+@contextmanager
+def txn(conn: sqlite3.Connection) -> Iterator[None]:
+    """BEGIN IMMEDIATE ... COMMIT; any exception rolls back everything written inside."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
+
+
+@dataclass
+class DecisionResult:
+    ok: bool
+    status: str | None = None
+    replayed: bool = False
+    reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ExecutionResult:
+    ok: bool
+    status: str | None = None
+    replayed: bool = False
+    outbox_id: int | None = None
+    reasons: list[str] = field(default_factory=list)
+
+
+# --- reads --------------------------------------------------------------------
+def get_proposal(conn: sqlite3.Connection, company_id: str, proposal_id: str) -> dict[str, Any] | None:
+    row = conn.execute("SELECT * FROM proposals WHERE proposal_id=? AND company_id=?",
+                       (proposal_id, company_id)).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["args"], d["evidence"] = json.loads(d.pop("args_json")), json.loads(d.pop("evidence_json"))
+    return d
+
+
+def list_proposals(conn: sqlite3.Connection, company_id: str) -> list[dict[str, Any]]:
+    ids = [r["proposal_id"] for r in conn.execute(
+        "SELECT proposal_id FROM proposals WHERE company_id=? ORDER BY created_at, proposal_id", (company_id,))]
+    return [get_proposal(conn, company_id, i) for i in ids]  # type: ignore[misc]
+
+
+def outbox_rows(conn: sqlite3.Connection, company_id: str) -> list[dict[str, Any]]:
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM outbox WHERE company_id=? ORDER BY outbox_id", (company_id,))]
+
+
+def _reviewer_ok(conn: sqlite3.Connection, session: Session, company_id: str) -> bool:
+    """Re-read the admin from the DB: authority is never taken from the in-memory session alone."""
+    row = conn.execute("SELECT company_id, role FROM admins WHERE admin_id=?", (session.admin_id,)).fetchone()
+    return row is not None and row["company_id"] == company_id and row["role"] == "approver"
+
+
+# --- propose ----------------------------------------------------------------
+def propose(conn: sqlite3.Connection, session: Session, action: str, args: dict[str, Any],
+            evidence: list[str], justification: str = "") -> ProposalResult:
+    repo = Repository(conn, session)
+    verdict = policy.check(repo, action, args, evidence)
+    h = canonical_hash(session.company_id, action, args, evidence)
+    if not verdict.ok:
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="proposal_refused",
+                     details={"action": action, "args": args, "evidence": evidence, "reasons": list(verdict.reasons)})
+        return ProposalResult(status="refused", reasons=list(verdict.reasons))
+
+    pid = "P-" + h[:12]
+    with txn(conn):
+        existing = get_proposal(conn, session.company_id, pid)
+        if existing is not None:
+            audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="proposal_duplicate",
+                         details={"proposal_id": pid, "status": existing["status"]})
+            return ProposalResult(proposal_id=pid, status=existing["status"], payload_hash=h, duplicate=True,
+                                  reasons=["an identical proposal already exists"])
+        conn.execute(
+            "INSERT INTO proposals(proposal_id, company_id, action, args_json, evidence_json, justification,"
+            " payload_hash, status, proposed_by) VALUES (?,?,?,?,?,?,?,'pending',?)",
+            (pid, session.company_id, action, json.dumps(args, sort_keys=True), json.dumps(sorted(evidence)),
+             justification, h, session.admin_id))
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="proposal_created",
+                     details={"proposal_id": pid, "action": action, "args": args, "evidence": sorted(evidence),
+                              "payload_hash": h})
+    return ProposalResult(proposal_id=pid, status="pending", payload_hash=h)
+
+
+# --- decide -----------------------------------------------------------------
+def decide(conn: sqlite3.Connection, session: Session, proposal_id: str, payload_hash: str,
+           decision: str) -> DecisionResult:
+    """decision: 'approve' | 'reject'. Idempotent: repeating the same decision returns the recorded outcome."""
+    want = {"approve": "approved", "reject": "rejected"}[decision]
+
+    def deny(reason: str, **extra: Any) -> DecisionResult:
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="decision_denied",
+                     details={"proposal_id": proposal_id, "decision": decision, "reason": reason, **extra})
+        return DecisionResult(False, reasons=[reason])
+
+    with txn(conn):
+        p = get_proposal(conn, session.company_id, proposal_id)  # scoped: foreign id == not found
+        if p is None:
+            return deny("proposal not found")
+        if not _reviewer_ok(conn, session, p["company_id"]):
+            return deny("reviewer is not an authorised approver for this company")
+        if payload_hash != p["payload_hash"]:
+            return deny("payload hash mismatch: the proposal changed or is not the one that was reviewed")
+
+        if p["status"] == want or (want == "approved" and p["status"] == "executed"):
+            audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="decision_replayed",
+                         details={"proposal_id": proposal_id, "decision": decision, "status": p["status"]})
+            return DecisionResult(True, status=p["status"], replayed=True)
+        if p["status"] != "pending":
+            return deny(f"proposal is already {p['status']}; the decision is final")
+
+        conn.execute("INSERT INTO approvals(proposal_id, payload_hash, reviewer_id, decision) VALUES (?,?,?,?)",
+                     (proposal_id, payload_hash, session.admin_id, want))
+        cur = conn.execute(
+            "UPDATE proposals SET status=?, decided_by=?, decided_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+            " WHERE proposal_id=? AND status='pending'", (want, session.admin_id, proposal_id))
+        if cur.rowcount != 1:
+            raise RuntimeError("compare-and-set on proposal status failed")  # rolls back the approval row too
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id,
+                     event="proposal_approved" if want == "approved" else "proposal_rejected",
+                     details={"proposal_id": proposal_id, "payload_hash": payload_hash})
+        return DecisionResult(True, status=want)
+
+
+# --- execute ----------------------------------------------------------------
+def execute(conn: sqlite3.Connection, session: Session, proposal_id: str) -> ExecutionResult:
+    def block(event: str, reason: str, **extra: Any) -> ExecutionResult:
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id, event=event,
+                     details={"proposal_id": proposal_id, "reason": reason, **extra})
+        return ExecutionResult(False, reasons=[reason])
+
+    with txn(conn):
+        p = get_proposal(conn, session.company_id, proposal_id)
+        if p is None:
+            return block("execution_blocked", "proposal not found")
+        if not _reviewer_ok(conn, session, p["company_id"]):
+            return block("execution_blocked", "reviewer is not an authorised approver for this company")
+
+        if p["status"] == "executed":
+            ob = conn.execute("SELECT outbox_id FROM outbox WHERE proposal_id=?", (proposal_id,)).fetchone()
+            audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="execution_replayed",
+                         details={"proposal_id": proposal_id, "outbox_id": ob["outbox_id"] if ob else None})
+            return ExecutionResult(True, status="executed", replayed=True, outbox_id=ob["outbox_id"] if ob else None)
+        if p["status"] != "approved":
+            return block("execution_blocked", f"proposal is {p['status']}, not approved", status=p["status"])
+
+        appr = conn.execute("SELECT payload_hash, decision FROM approvals WHERE proposal_id=?",
+                            (proposal_id,)).fetchone()
+        if appr is None or appr["decision"] != "approved" or appr["payload_hash"] != p["payload_hash"]:
+            return block("execution_blocked", "no approval bound to this exact proposal payload")
+
+        # Re-verify the evidence NOW, inside the transaction.
+        verdict = policy.check(Repository(conn, session), p["action"], p["args"], p["evidence"])
+        if not verdict.ok:
+            conn.execute("UPDATE proposals SET status='failed', outcome_json=? WHERE proposal_id=?",
+                         (json.dumps({"refused_by_policy": list(verdict.reasons)}), proposal_id))
+            audit.record(conn, company_id=session.company_id, actor=session.admin_id,
+                         event="execution_refused_by_policy",
+                         details={"proposal_id": proposal_id, "reasons": list(verdict.reasons)})
+            return ExecutionResult(False, status="failed", reasons=list(verdict.reasons))
+
+        outcome = {"type": p["action"], **p["args"], "evidence": p["evidence"], "approved_by": appr_reviewer(conn, proposal_id),
+                   "proposal_id": proposal_id}
+        cur = conn.execute(
+            "UPDATE proposals SET status='executed', outcome_json=? "
+            "WHERE proposal_id=? AND status='approved' AND payload_hash=?",
+            (json.dumps(outcome, sort_keys=True), proposal_id, p["payload_hash"]))
+        if cur.rowcount != 1:
+            raise RuntimeError("compare-and-set on proposal status failed")
+        cur = conn.execute("INSERT INTO outbox(proposal_id, company_id, action, payload_json) VALUES (?,?,?,?)",
+                           (proposal_id, p["company_id"], p["action"], json.dumps(outcome, sort_keys=True)))
+        audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="action_executed",
+                     details={"proposal_id": proposal_id, "outbox_id": cur.lastrowid, "action": p["action"]})
+        return ExecutionResult(True, status="executed", outbox_id=cur.lastrowid)
+
+
+def appr_reviewer(conn: sqlite3.Connection, proposal_id: str) -> str | None:
+    row = conn.execute("SELECT reviewer_id FROM approvals WHERE proposal_id=?", (proposal_id,)).fetchone()
+    return row["reviewer_id"] if row else None
