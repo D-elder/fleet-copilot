@@ -6,6 +6,35 @@ every state-changing action gated by deterministic evidence checks and an explic
 
 Built for Rayda's take-home assessment: Python, LangGraph, SQLite, an OpenRouter-hosted model, and a CLI.
 
+## For reviewers: start here
+
+**See it without running anything**
+
+| I want to see... | Open |
+|---|---|
+| a real session: grounded answers, a zero result, trends, an approved upgrade, a rejected replacement, a blocked cross-company lookup | [docs/evidence/demo-transcript.md](docs/evidence/demo-transcript.md) |
+| the evaluation results (46 cases x 3 repeats, real model, independent oracle) | [docs/evidence/eval-live-report-deepseek.md](docs/evidence/eval-live-report-deepseek.md) |
+| the approval flow proven end to end (0 outbox rows before approval, exactly 1 after, still 1 after replaying the approval) | [docs/evidence/slice-live-deepseek.md](docs/evidence/slice-live-deepseek.md) |
+
+**Run the tests (no API key, about a minute)**
+
+```bash
+uv sync
+uv run pytest                                   # 150+ deterministic tests; a scripted model drives the real graph
+uv run python -m evals.smoke --fake             # offline end-to-end rehearsal of the approval flow
+```
+
+**Run the CLI (needs an OpenRouter key in `.env`; copy `.env.example`)**
+
+```bash
+uv run fleet-copilot --company acme-001 --admin admin-acme-1
+```
+
+Good first questions: *"Show me laptops failing high-severity compliance checks."* (a grounded zero),
+*"Which Acme batteries are approaching end of life?"* then `/trace`, and
+*"Order a RAM upgrade to 32GB for M4XVHUV1MEPZ."* (approval prompt; then `/approve <id>` again to see the replay is a no-op).
+The rest of this README covers the architecture, tool catalog, grounding strategy, guardrails and trade-offs.
+
 - [Setup](#setup) | [Run the agent](#running-the-agent) | [Run the evaluations](#running-the-evaluations)
 - [Architecture](#architecture) | [Tool catalog](#tool-catalog) | [Grounding strategy](#grounding-strategy)
 - [Guardrails](#guardrails) | [Data rules](#data-rules-and-thresholds) | [Design decisions and trade-offs](#key-design-decisions-and-trade-offs)
