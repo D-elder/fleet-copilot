@@ -234,14 +234,16 @@ Committed artifacts in [docs/evidence/](docs/evidence/):
 
 | File | What it is |
 |---|---|
-| `eval-live-report-deepseek.md` / `.json` | full 46-case real-model evaluation on the default model, `deepseek/deepseek-v4-pro` |
+| `eval-live-report-deepseek.md` / `.json` | full 46-case real-model evaluation, 3 repeats each (138 runs), on the default model `deepseek/deepseek-v4-pro` |
 | `demo-transcript.md` | a recorded admin session (DeepSeek) through the real CLI code path: grounded answers, a blocked cross-company `/evidence`, a zero result, a trend + `/trace`, an approved upgrade, a rejected replacement, "not found" for another company's device |
 | `slice-live-deepseek.md` | end-to-end flow with the real model, CLI transcript and audit records: grounded answer, supported ticket, pause for approval, **0 outbox rows before approval, exactly 1 after, still 1 after replaying the approval twice** (13 checks) |
 | `eval-live-report.md` / `.json`, `slice-live.md` | the same evaluation / flow on `anthropic/claude-sonnet-5.5` (comparison; the evaluation report is merged from three runs, see below) |
 
 ### Real-model evaluation: `deepseek/deepseek-v4-pro` (temperature 0, seed 7)
 
-**46 of 46 cases passed** in the final run (no infrastructure errors).
+**138 of 138 runs passed: all 46 cases, each repeated 3 times, and every case passed all 3 times** (no infrastructure
+errors, no unstable case). Run on commit `c49d451` with a clean working tree. Device-set precision/recall 100 %/100 %,
+every answer passed claim validation, and every run recorded a plan with its evidence gathered.
 
 | Category | Passed | What it covers |
 |---|---|---|
@@ -263,18 +265,22 @@ How to read this honestly:
   `emp-acme-1000`, it found the device belonged to someone else and quietly proposed notifying **them**. Both were
   policy-valid and disclosed, but not what the admin asked. The fix is the *target guard* (see Guardrails) plus a prompt
   rule, with tests. The tests were not loosened: the same cases now pass.
-- One run per case measures a regression signal, not a variance estimate. Use `--repeats 3` before relying on a rate.
+- **Stability was measured, not assumed:** three repeats of every case (temperature 0, fixed seed) gave identical
+  outcomes. That is evidence of stability on this model and dataset, not a guarantee: the provider can change the model
+  behind the `deepseek-v4-pro` alias, so pin a dated snapshot with `FLEET_MODEL` when strict reproducibility matters.
+- The cases were written by the same team that built the system, and the first run's two real failures were found only
+  because the suite compared against an independent oracle. Treat 138/138 as a strong regression signal, not proof that
+  no failure mode exists; new questions from real admins are the best next test.
 - Results are for one model on this dataset; the earlier Sonnet run (45/46, one case unmeasured because of a provider
   credit limit, no `src/` changes between its runs, merged by `python -m evals.merge`) predates the target guard.
-- The runs executed on the working tree on top of the git commit recorded in each report.
 - Earlier live runs also found: an unsupported "per company policy" ticket note written by the model (see Guardrails),
   and a provider that rejects forced `tool_choice` for the planning call.
 
 ## Known limitations
 
 - Each question is its own conversation thread; there is no multi-turn memory between questions.
-- The real-model suite measures one model on one dataset; counts of cases per category are small, so treat pass rates as
-  a regression signal, not a statistical estimate (use `--repeats`).
+- The real-model suite measures one model on one 25-device dataset with cases written alongside the system; repeats show
+  stability, not coverage of questions nobody thought to ask.
 - Trend thresholds are judgement calls documented above; a borderline device (e.g. 43 % of snapshots over the RAM
   threshold) is deliberately reported as *intermittent*, not hidden.
 - Only the proposals' supporting facts are verified; the wisdom of acting on them is the approver's call.
