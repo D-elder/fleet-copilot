@@ -271,7 +271,7 @@ Committed artifacts in [docs/evidence/](docs/evidence/):
 ### Real-model evaluation: `deepseek/deepseek-v4-pro` (temperature 0, seed 7)
 
 **138 of 138 runs passed: all 46 cases, each repeated 3 times, and every case passed all 3 times** (no infrastructure
-errors, no unstable case). Run on commit `c49d451` with a clean working tree. Device-set precision/recall 100 %/100 %,
+errors, no unstable case). Run with a clean working tree (the report records commit `c49d451`; see the hash note below). Device-set precision/recall 100 %/100 %,
 every answer passed claim validation, and every run recorded a plan with its evidence gathered.
 
 | Category | Passed | What it covers |
@@ -302,6 +302,10 @@ How to read this honestly:
   no failure mode exists; new questions from real admins are the best next test.
 - Results are for one model on this dataset; the earlier Sonnet run (45/46, one case unmeasured because of a provider
   credit limit, no `src/` changes between its runs, merged by `python -m evals.merge`) predates the target guard.
+- **Hash note:** the evidence reports record the commits they ran on (`c49d451` for the DeepSeek report, `cf40ea4` for the
+  Sonnet one). Git history was rewritten afterwards, before anything was pushed, only to edit commit-message trailers;
+  every tree is byte-identical, and those commits are now `db41fa3` and `73adedc`. The reports are left unedited as
+  recorded output.
 - Earlier live runs also found: an unsupported "per company policy" ticket note written by the model (see Guardrails),
   and a provider that rejects forced `tool_choice` for the planning call.
 
