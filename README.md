@@ -23,6 +23,11 @@ cp .env.example .env         # then put your key in .env (it is gitignored)
 uv run pytest                # offline, deterministic, no API key needed
 ```
 
+Troubleshooting: after installing `uv`, open a **new terminal** (or restart VS Code) so `uv` is on your PATH. If another
+virtualenv is already activated, `uv` prints a harmless `VIRTUAL_ENV ... does not match` warning and uses the project's
+own `.venv`. Without a key the CLI exits with a one-line message (the offline tests and `python -m evals.smoke --fake`
+need none).
+
 `.env` settings (all optional except the key):
 
 | Variable | Default | Purpose |

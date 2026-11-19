@@ -225,8 +225,13 @@ def main(argv: list[str] | None = None) -> int:
     except AccessDenied as e:
         print(f"Access denied: {e}", file=sys.stderr)
         return 2
-    from .llm import make_agent
+    from .llm import make_agent, require_key
 
+    try:
+        require_key()
+    except RuntimeError as e:   # a friendly message instead of a stack trace on first run
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
     cp = sqlite3.connect(str(config.ROOT / "var" / "checkpoints.db"), check_same_thread=False)
     Repl(make_agent(conn, session, checkpoint_conn=cp), conn, session).run()
     return 0

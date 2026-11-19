@@ -16,12 +16,18 @@ def describe() -> dict[str, Any]:
             "temperature": config.TEMPERATURE, "seed": config.SEED, "base_url": config.OPENROUTER_BASE_URL}
 
 
+def require_key() -> str:
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY is not set. Copy .env.example to .env and put your key in it "
+                           "(.env is gitignored).")
+    return key
+
+
 def _chat():
     from langchain_openai import ChatOpenAI
 
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set. Put it in a gitignored .env file (see .env.example).")
+    key = require_key()
     extra_body: dict[str, Any] = {}
     if config.PROVIDER:  # pin the upstream provider so repeated runs hit the same backend
         extra_body["provider"] = {"order": [config.PROVIDER], "allow_fallbacks": False}
