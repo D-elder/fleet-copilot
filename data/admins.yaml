@@ -1,0 +1,8 @@
+# Seeded reviewers. Approval requires the `approver` role *for the company of the proposal*.
+admins:
+  - {admin_id: admin-acme-1,    company_id: acme-001,    role: approver}
+  - {admin_id: viewer-acme-1,   company_id: acme-001,    role: viewer}
+  - {admin_id: admin-globex-1,  company_id: globex-002,  role: approver}
+  - {admin_id: viewer-globex-1, company_id: globex-002,  role: viewer}
+  - {admin_id: admin-initech-1, company_id: initech-003, role: approver}
+  - {admin_id: viewer-initech-1, company_id: initech-003, role: viewer}

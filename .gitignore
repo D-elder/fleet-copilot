@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.db
+*.db-journal
+*.sqlite
+var/
+evals/reports/*
+!evals/reports/.gitkeep
+
+# Local copies of the provided brief/dataset (data/ holds the canonical dataset)
+/Take-Home*.pdf
+/device-telemetry-dataset.ndjson
