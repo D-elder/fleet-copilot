@@ -27,8 +27,14 @@ uv run python -m evals.smoke --fake             # offline end-to-end rehearsal o
 **Run the CLI (needs an OpenRouter key in `.env`; copy `.env.example`)**
 
 ```bash
+cp .env.example .env     # then paste the key after OPENROUTER_API_KEY=   (.env is gitignored)
 uv run fleet-copilot --company acme-001 --admin admin-acme-1
 ```
+
+> **API key for reviewers:** a temporary, spend-capped OpenRouter key is sent to you separately by the candidate. It is
+> deliberately not in this repository or its history. Put it in your local `.env` only; the candidate will revoke it
+> after the review. You can also use any OpenRouter key of your own. The tests and `python -m evals.smoke --fake` need
+> no key at all.
 
 Good first questions: *"Show me laptops failing high-severity compliance checks."* (a grounded zero),
 *"Which Acme batteries are approaching end of life?"* then `/trace`, and
