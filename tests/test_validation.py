@@ -95,3 +95,20 @@ def test_zero_result_answer_validates_and_shows_what_was_checked(repo_for):
     text = render_answer(ans, {res.result_id: res})
     assert "matched 0 of 10 devices checked" in text
     assert '"check_severity": "high"' in text and "acme-001" in text and res.as_of in text
+
+
+def test_subset_claim_header_states_what_the_tool_matched_not_how_many_rows_are_shown(repo_for):
+    """Found by a tester on a Mac: an unfiltered 10-device query cited for ONE device rendered as
+    'filters: (none) ... matched 1 of 10 devices checked', which misstates what the tool matched."""
+    repo = repo_for(ACME)
+    res = repo.query_devices(DeviceFilters())                      # unfiltered: all 10 devices match
+    one = res.rows[0]
+    subset = Answer(summary="x", claims=[Claim(result_id=res.result_id, device_ids=[one.device_id], count=1,
+                                               snapshot_ids=[one.snapshot_id], subset=True)])
+    text = render_answer(subset, {res.result_id: res})
+    assert "matched 10 of 10 devices checked; showing the 1 the answer cites" in text
+    assert "matched 1 of 10" not in text and one.device_id in text
+    # a claim covering the whole result keeps the plain header
+    full = Answer(summary="x", claims=[claim(res)])
+    plain = render_answer(full, {res.result_id: res})
+    assert "matched 10 of 10 devices checked" in plain and "showing the" not in plain

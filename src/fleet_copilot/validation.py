@@ -135,7 +135,10 @@ def render_result(r: ToolResult, only_devices: set[str] | None = None) -> str:
         f"Evidence {r.result_id} ({r.tool})",
         f"  company: {r.company_id} | as of: {r.as_of} | window: {r.window.start} .. {r.window.end}",
         f"  filters: {json.dumps(r.filters, sort_keys=True) if r.filters else '(none)'}",
-        f"  matched {len(rows)} of {len(r.population_checked)} devices checked",
+        # When the answer cites only a subset of a result, the header must still state what the TOOL matched; the rows
+        # shown are just the cited ones. (Previously this said "matched 1 of 10" for an unfiltered 10-device query.)
+        (f"  matched {len(rows)} of {len(r.population_checked)} devices checked" if only_devices is None else
+         f"  matched {r.count} of {len(r.population_checked)} devices checked; showing the {len(rows)} the answer cites"),
     ]
     for row in rows:
         if "finding" in row.values:

@@ -202,3 +202,49 @@ def test_execution_rechecks_evidence_and_refuses_if_it_went_stale(conn, approver
     assert outbox_count(conn) == 0
     assert actions.get_proposal(conn, ACME, p.proposal_id)["status"] == "failed"
     assert len(events(conn, "execution_refused_by_policy")) == 1
+
+
+# --- a rejected proposal is final, but the admin may ask again --------------------------------------------------
+def test_a_rejected_proposal_can_be_proposed_again_as_a_new_proposal(conn, approver):
+    """Found by a tester: after rejecting a ticket, asking for the same ticket again returned 'already exists'
+    (status rejected) forever. The old proposal must stay final; asking again must create a NEW one."""
+    a = proposed(conn, approver)
+    assert actions.decide(conn, approver, a.proposal_id, a.payload_hash, "reject").status == "rejected"
+
+    b = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)])
+    assert b.status == "pending" and not b.duplicate
+    assert b.proposal_id == a.proposal_id + "-r2" and b.payload_hash == a.payload_hash
+    assert actions.get_proposal(conn, ACME, a.proposal_id)["status"] == "rejected"        # old one untouched
+    assert not actions.decide(conn, approver, a.proposal_id, a.payload_hash, "approve").ok  # and cannot be revived
+    created = [json.loads(e["details_json"]) for e in events(conn, "proposal_created")]
+    assert created[1]["follows_closed_proposals"] == [a.proposal_id]
+
+    # asking again while the new one is pending is a duplicate of the NEW one, not a third proposal
+    c = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)])
+    assert c.duplicate and c.proposal_id == b.proposal_id
+    assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 2
+
+    # approving the new proposal executes exactly once
+    assert actions.decide(conn, approver, b.proposal_id, b.payload_hash, "approve").ok
+    assert actions.execute(conn, approver, b.proposal_id).ok
+    assert outbox_count(conn) == 1 and actions.execute(conn, approver, b.proposal_id).replayed
+    assert outbox_count(conn) == 1
+
+
+def test_an_executed_proposal_is_still_a_duplicate_so_nothing_runs_twice(conn, approver):
+    a = proposed(conn, approver)
+    actions.decide(conn, approver, a.proposal_id, a.payload_hash, "approve")
+    actions.execute(conn, approver, a.proposal_id)
+    again = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)])
+    assert again.duplicate and again.status == "executed" and again.proposal_id == a.proposal_id
+    assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1 and outbox_count(conn) == 1
+
+
+def test_reproposing_twice_after_two_rejections_keeps_ids_unique(conn, approver):
+    ids = []
+    for _ in range(3):
+        p = actions.propose(conn, approver, ACTION, ARGS, [latest_id(conn)])
+        assert p.status == "pending"
+        ids.append(p.proposal_id)
+        assert actions.decide(conn, approver, p.proposal_id, p.payload_hash, "reject").ok
+    assert len(set(ids)) == 3 and ids[1].endswith("-r2") and ids[2].endswith("-r3")

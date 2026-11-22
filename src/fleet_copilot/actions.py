@@ -100,14 +100,20 @@ def propose(conn: sqlite3.Connection, session: Session, action: str, args: dict[
 
     args, justification = notes.generate(action, repo, args, evidence)
     h = canonical_hash(session.company_id, action, args, evidence)
-    pid = "P-" + h[:12]
     with txn(conn):
-        existing = get_proposal(conn, session.company_id, pid)
-        if existing is not None:
+        prior = conn.execute("SELECT proposal_id, status FROM proposals WHERE company_id=? AND payload_hash=? "
+                             "ORDER BY created_at, proposal_id", (session.company_id, h)).fetchall()
+        # An identical proposal that is still live (pending / approved / executed) is a duplicate: return it, never
+        # create a second one (this is what keeps "one outbox entry per request" true).
+        live = next((r for r in prior if r["status"] in ("pending", "approved", "executed")), None)
+        if live is not None:
             audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="proposal_duplicate",
-                         details={"proposal_id": pid, "status": existing["status"]})
-            return ProposalResult(proposal_id=pid, status=existing["status"], payload_hash=h, duplicate=True,
-                                  reasons=["an identical proposal already exists"])
+                         details={"proposal_id": live["proposal_id"], "status": live["status"]})
+            return ProposalResult(proposal_id=live["proposal_id"], status=live["status"], payload_hash=h,
+                                  duplicate=True, reasons=["an identical proposal already exists"])
+        # A rejected (or failed) proposal stays final and untouched, but the admin may ask again: that creates a NEW
+        # proposal with its own id, approval and audit trail. Ids stay unique because proposals are never deleted.
+        pid = "P-" + h[:12] + (f"-r{len(prior) + 1}" if prior else "")
         conn.execute(
             "INSERT INTO proposals(proposal_id, company_id, action, args_json, evidence_json, justification,"
             " payload_hash, status, proposed_by) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -115,7 +121,8 @@ def propose(conn: sqlite3.Connection, session: Session, action: str, args: dict[
              justification, h, "pending", session.admin_id))
         audit.record(conn, company_id=session.company_id, actor=session.admin_id, event="proposal_created",
                      details={"proposal_id": pid, "action": action, "args": args, "evidence": sorted(evidence),
-                              "justification": justification, "payload_hash": h})
+                              "justification": justification, "payload_hash": h,
+                              **({"follows_closed_proposals": [r["proposal_id"] for r in prior]} if prior else {})})
     return ProposalResult(proposal_id=pid, status="pending", payload_hash=h)
 
 
