@@ -1,6 +1,6 @@
 # Thursday slice - end-to-end evidence (PASS)
 
-Run started: 2026-11-19T11:03:29+00:00  
+Run started: 2026-11-22T13:50:42+00:00  
 mode: `LIVE`  
 model: `deepseek/deepseek-v4-pro`  
 provider: `(openrouter default routing)`  
@@ -44,7 +44,7 @@ fleet> Which devices at Acme are currently failing the screen_lock compliance ch
   coverage: all planned evidence gathered
   validator: claims verified against tool results
 
-Five devices at Acme are currently failing the screen_lock compliance check: 1LYSSFD074BB, 8NM23J95R5I6, DLT35MHGTH2D, DSYPSES7SKBB, and MT7PJB7N5LRE. A remediation ticket for screen_lock on device 1LYSSFD074BB has been proposed (proposal P-1e91f5a86261) and is pending human approval.
+5 devices are currently failing the screen_lock compliance check: 1LYSSFD074BB (MacBook Pro, emp-acme-1001), 8NM23J95R5I6 (ThinkPad X1 Carbon, emp-acme-1005), DLT35MHGTH2D (Mac mini, emp-acme-1003), DSYPSES7SKBB (MacBook Pro, emp-acme-1002), and MT7PJB7N5LRE (MacBook Pro, emp-acme-1003). A remediation ticket for screen_lock on device 1LYSSFD074BB has been proposed (proposal P-1e91f5a86261, pending approval).
 
 Evidence R-30d419ff6b (query_devices)
   company: acme-001 | as of: 2026-06-12T11:00:00Z | window: 2026-06-12T08:39:00Z .. 2026-06-12T11:00:00Z
@@ -83,32 +83,32 @@ fleet> /outbox
 1 outbox entry
   #1 P-1e91f5a86261 open_remediation_ticket {"approved_by": "admin-acme-1", "check_id": "screen_lock", "device_id": "1LYSSFD074BB", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.", "proposal_id": "P-1e91f5a86261", "type": "open_remediation_ticket"}
 fleet> /audit 60
-    1 2026-11-19T11:03:29.863Z admin-acme-1 question_asked {"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:d48052cc"}
-    2 2026-11-19T11:03:43.244Z admin-acme-1 proposal_created {"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
-    3 2026-11-19T11:03:47.524Z admin-acme-1 proposal_approved {"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
-    4 2026-11-19T11:03:47.533Z admin-acme-1 action_executed {"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
-    5 2026-11-19T11:03:47.543Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
-    6 2026-11-19T11:03:47.548Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
-    7 2026-11-19T11:03:47.553Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
-    8 2026-11-19T11:03:47.562Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
+    1 2026-11-22T13:50:42.664Z admin-acme-1 question_asked {"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:0c65debc"}
+    2 2026-11-22T13:51:03.429Z admin-acme-1 proposal_created {"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
+    3 2026-11-22T13:51:17.555Z admin-acme-1 proposal_approved {"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}
+    4 2026-11-22T13:51:17.570Z admin-acme-1 action_executed {"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
+    5 2026-11-22T13:51:17.586Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
+    6 2026-11-22T13:51:17.592Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
+    7 2026-11-22T13:51:17.606Z admin-acme-1 decision_replayed {"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}
+    8 2026-11-22T13:51:17.614Z admin-acme-1 execution_replayed {"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}
 ```
 
 ## Audit records (audit_log, this company)
 
 | id | ts | actor | event | details |
 |---|---|---|---|---|
-| 1 | 2026-11-19T11:03:29.863Z | admin-acme-1 | question_asked | `{"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:d48052cc"}` |
-| 2 | 2026-11-19T11:03:43.244Z | admin-acme-1 | proposal_created | `{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
-| 3 | 2026-11-19T11:03:47.524Z | admin-acme-1 | proposal_approved | `{"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
-| 4 | 2026-11-19T11:03:47.533Z | admin-acme-1 | action_executed | `{"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
-| 5 | 2026-11-19T11:03:47.543Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
-| 6 | 2026-11-19T11:03:47.548Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
-| 7 | 2026-11-19T11:03:47.553Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
-| 8 | 2026-11-19T11:03:47.562Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
+| 1 | 2026-11-22T13:50:42.664Z | admin-acme-1 | question_asked | `{"question": "Which devices at Acme are currently failing the screen_lock compliance check? Then open a remediation ticket for screen_lock on device 1LYSSFD074BB.", "thread_id": "acme-001:0c65debc"}` |
+| 2 | 2026-11-22T13:51:03.429Z | admin-acme-1 | proposal_created | `{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
+| 3 | 2026-11-22T13:51:17.555Z | admin-acme-1 | proposal_approved | `{"payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261"}` |
+| 4 | 2026-11-22T13:51:17.570Z | admin-acme-1 | action_executed | `{"action": "open_remediation_ticket", "outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
+| 5 | 2026-11-22T13:51:17.586Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
+| 6 | 2026-11-22T13:51:17.592Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
+| 7 | 2026-11-22T13:51:17.606Z | admin-acme-1 | decision_replayed | `{"decision": "approve", "proposal_id": "P-1e91f5a86261", "status": "executed"}` |
+| 8 | 2026-11-22T13:51:17.614Z | admin-acme-1 | execution_replayed | `{"outbox_id": 1, "proposal_id": "P-1e91f5a86261"}` |
 
 ## Proposal and outbox rows
 
 ```text
-{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "company_id": "acme-001", "created_at": "2026-11-19T11:03:43.241Z", "decided_at": "2026-11-19T11:03:47.523Z", "decided_by": "admin-acme-1", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "outcome_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261", "proposed_by": "admin-acme-1", "status": "executed"}
-{"action": "open_remediation_ticket", "company_id": "acme-001", "created_at": "2026-11-19T11:03:47.533Z", "outbox_id": 1, "payload_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "proposal_id": "P-1e91f5a86261"}
+{"action": "open_remediation_ticket", "args": {"check_id": "screen_lock", "device_id": "1LYSSFD074BB", "note": "Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check."}, "company_id": "acme-001", "created_at": "2026-11-22T13:51:03.416Z", "decided_at": "2026-11-22T13:51:17.555Z", "decided_by": "admin-acme-1", "evidence": ["1LYSSFD074BB@2026-06-12T09:47:00Z"], "justification": "screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.", "outcome_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "payload_hash": "1e91f5a862615c83c3cb1c0a915a568b959510aa09f94005eab27457384617f1", "proposal_id": "P-1e91f5a86261", "proposed_by": "admin-acme-1", "status": "executed"}
+{"action": "open_remediation_ticket", "company_id": "acme-001", "created_at": "2026-11-22T13:51:17.570Z", "outbox_id": 1, "payload_json": "{\"approved_by\": \"admin-acme-1\", \"check_id\": \"screen_lock\", \"device_id\": \"1LYSSFD074BB\", \"evidence\": [\"1LYSSFD074BB@2026-06-12T09:47:00Z\"], \"justification\": \"screen_lock is reported as failed in the device's latest snapshot 1LYSSFD074BB@2026-06-12T09:47:00Z.\", \"note\": \"Review the screen-lock configuration on 1LYSSFD074BB. The latest telemetry snapshot (2026-06-12T09:47:00Z) reports a failed screen_lock check.\", \"proposal_id\": \"P-1e91f5a86261\", \"type\": \"open_remediation_ticket\"}", "proposal_id": "P-1e91f5a86261"}
 ```

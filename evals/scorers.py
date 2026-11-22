@@ -22,9 +22,9 @@ class Observed:
     rendered: str
     summary: str
     claimed: set[str]                           # every device named in any claim
-    claimed_primary: set[str]                   # devices claimed from the tools that EVALUATE the question's condition
-    has_primary_claim: bool                     # (query_devices / analyze_trends); fleet_overview and get_device claims
-    tools: list[str]                            # are context/lookups and must not count as "matches"
+    claimed_primary: set[str]                   # devices claimed from results that EVALUATED a condition (query_devices /
+    has_primary_claim: bool                     # analyze_trends WITH filters); claims on unfiltered results, fleet_overview
+    tools: list[str]                            # and get_device are population/lookup context, not "matches"
     proposal_entries: list[dict[str, Any]]      # what the agent attempted (incl. refused)
     db_proposals: list[dict[str, Any]]          # what exists in the proposals table
     outbox: list[dict[str, Any]]

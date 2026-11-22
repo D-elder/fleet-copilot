@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| Date (UTC) | 2026-11-19 14:06:44 |
+| Date (UTC) | 2026-11-22 14:26:34 |
 | Model | `deepseek/deepseek-v4-pro` |
 | Provider | `(openrouter default routing)` |
 | Temperature / seed | 0.0 / 7 |
 | Repeats per case | 3 |
 | Cases | 46 |
-| Git commit | `c49d451` |
+| Git commit | `c85bb27` |
 | Dataset sha256 | `fb0ee31ffeeb731b` |
 | Python | 3.12.16 |
 
@@ -19,8 +19,8 @@
 - **Pass rate: 138/138 runs (100.0%)**; infrastructure errors: 0
 - Device-set precision 100.0% / recall 100.0% (cases that expect a device set)
 - Answers passing claim validation: 100.0%
-- Plan recorded: 100.0% of runs; runs with unresolved plan-coverage gaps: 0
-- Average wall time per run: 21.0s
+- Plan recorded: 99.3% of runs; runs with unresolved plan-coverage gaps: 0
+- Average wall time per run: 26.2s
 
 ## Pass rate by category
 

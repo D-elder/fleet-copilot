@@ -149,6 +149,36 @@ def test_a_correct_answer_with_an_extra_fleet_overview_claim_passes_but_wrong_de
     assert not r["passed"] and r["fp"] > 0          # a wrong primary claim is still caught
 
 
+def test_a_context_claim_on_an_unfiltered_result_is_not_a_match_claim_but_a_sole_wrong_claim_still_fails(oracle):
+    """Found in the final-code 3x run: the model named exactly the 3 right devices from analyze_trends AND cited an
+    unfiltered query_devices {} result (all 10) for context. The 10 devices are the population, not matches."""
+    from .fakes import claim_for, last_result
+    case = case_by_id("trend-battery-acme")
+
+    def final_with_population_context(messages):
+        return ai(call("final_answer", {"summary": "Three batteries are near end of life, out of 10 devices.", "claims": [
+            claim_for(last_result(messages, "analyze_trends")), claim_for(last_result(messages, "query_devices"))]}))
+
+    good = [plan("battery", [need("trend_battery")]), ai(call("query_devices", {})),
+            ai(call("analyze_trends", {"kind": "battery_health"})), final_with_population_context]
+    r = eval_run.run_one(case, 1, oracle, factory_with(good))
+    assert r["passed"], r["checks"]
+    assert (r["tp"], r["fp"], r["fn"]) == (3, 0, 0)
+
+    # claiming ONLY the whole fleet as the answer must still fail (no primary claim -> all claims count)
+    wrong = [plan("battery", [need("trend_battery")]), ai(call("query_devices", {})),
+             ai(call("analyze_trends", {"kind": "battery_health"})),
+             final_from_last_result("Batteries are all fine.", tool="query_devices")]
+    r = eval_run.run_one(case, 1, oracle, factory_with(wrong))
+    assert not r["passed"] and r["fp"] == 7
+
+    # a WRONG filtered claim is still caught even when a correct context claim accompanies it
+    wrong_filtered = [plan("battery", [need("devices_state")]), ai(call("query_devices", {"disk_free_pct_lt": 30})),
+                      final_from_last_result("These batteries are bad.", tool="query_devices")]
+    r = eval_run.run_one(case, 1, oracle, factory_with(wrong_filtered))
+    assert r["error"] is None and not r["passed"] and r["fp"] > 0
+
+
 def test_zero_result_ignores_a_get_device_lookup_but_still_catches_a_false_match(oracle):
     """Found in the first live eval: the model answered 'No' (trend shows 0 matches) and ALSO cited a get_device lookup
     for context. That is a correct grounded zero; a get_device row is not a claim that the condition matched."""

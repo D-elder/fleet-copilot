@@ -58,8 +58,13 @@ def load_cases(ids: list[str] | None = None, category: str | None = None) -> lis
 PRIMARY_TOOLS = {"query_devices", "analyze_trends"}
 
 
-def _tool_of(state: dict[str, Any], claim: dict[str, Any]) -> str | None:
-    return state.get("results", {}).get(claim["result_id"], {}).get("tool")
+def _is_primary(state: dict[str, Any], claim: dict[str, Any]) -> bool:
+    """A claim states 'these devices match the question's condition' only if it cites a result that EVALUATED a
+    condition: query_devices / analyze_trends WITH filters. A claim on an unfiltered result (query_devices {},
+    fleet_overview) or on a get_device lookup states the population or a fact about one device; models often add one
+    for context ('out of 10 devices in the fleet'), and that is not a claim that those devices matched."""
+    r = state.get("results", {}).get(claim["result_id"], {})
+    return r.get("tool") in PRIMARY_TOOLS and bool(r.get("filters"))
 
 
 def observe(case: dict[str, Any], conn: sqlite3.Connection, outcome, approvals_given: int) -> Observed:
@@ -83,8 +88,8 @@ def observe(case: dict[str, Any], conn: sqlite3.Connection, outcome, approvals_g
         company=company, question=case["question"], approval_mode=case.get("approval", "none"),
         approvals_given=approvals_given, validated=outcome.validated, rendered=outcome.rendered,
         summary=final.get("summary", ""), claimed={d for c in claims for d in c["device_ids"]},
-        claimed_primary={d for c in claims for d in c["device_ids"] if _tool_of(state, c) in PRIMARY_TOOLS},
-        has_primary_claim=any(_tool_of(state, c) in PRIMARY_TOOLS for c in claims),
+        claimed_primary={d for c in claims for d in c["device_ids"] if _is_primary(state, c)},
+        has_primary_claim=any(_is_primary(state, c) for c in claims),
         tools=[t["tool"] for t in outcome.trace if t.get("tool")], proposal_entries=entries, db_proposals=db_props,
         outbox=outbox, audit_events=[r["event"] for r in audit.events(conn, company_id=company)],
         results=state.get("results", {}), orphan_outbox_rows=orphans, plan_recorded=bool(state.get("plan")),

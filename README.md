@@ -208,7 +208,7 @@ interrupt, in application code.
 | Tenant isolation | company comes from the session; every repository query takes it; tool schemas have no `company_id` and reject unknown fields; foreign ids are indistinguishable from missing ones; checkpoint threads are bound to their company | `test_data_rules`, `test_analytics`, `test_actions`, `test_graph_flow` (thread hijack), eval `isolation` |
 | No cross-company access | as above, plus evidence/employee/device lookups scoped; `/evidence` audited when not found | same |
 | Human approval for state changes | LLM has no execute tool; approval is bound to proposal id + company + payload hash + reviewer's *stored* approver role; viewers and forged sessions are denied | `test_actions`, `test_graph_flow`, eval `approval` |
-| Safe to retry | execution is one `BEGIN IMMEDIATE` transaction: re-check policy, compare-and-set status, insert outbox row (`UNIQUE(proposal_id)`), write audit row; replays return the recorded outcome and write nothing; rejection is final; failure rolls everything back | `test_actions` (replay, atomicity, stale evidence at execution) and the live smoke run |
+| Safe to retry | execution is one `BEGIN IMMEDIATE` transaction: re-check policy, compare-and-set status, insert outbox row (`UNIQUE(proposal_id)`), write audit row; replays return the recorded outcome and write nothing; a rejected proposal is final and cannot be revived, but asking again creates a *new* proposal (`P-...-r2`) with its own approval and audit trail, while an identical pending/approved/executed one is returned instead of duplicated; failure rolls everything back | `test_actions` (replay, atomicity, stale evidence at execution, re-proposal after rejection) and the live smoke run |
 | Audit logs | append-only `audit_log`: questions, proposals (created/refused/duplicate), decisions (approved/rejected/denied/replayed), executions, scope denials | every flow test asserts the events and their order |
 | Refuse without sufficient evidence | `policy.py` runs at proposal time **and again inside the execution transaction**; evidence must exist, belong to the device, be fresh, and show the specific condition | `test_policy_matrix` (supported + refused per action), eval `actions_refused` |
 | No unsupported claims in proposals | the model cannot supply prose; notes, reasons, messages and justifications are templates over verified facts | `test_notes` (regression for the invented "per company policy" note), eval implied check |
@@ -277,8 +277,10 @@ Committed artifacts in [docs/evidence/](docs/evidence/):
 ### Real-model evaluation: `deepseek/deepseek-v4-pro` (temperature 0, seed 7)
 
 **138 of 138 runs passed: all 46 cases, each repeated 3 times, and every case passed all 3 times** (no infrastructure
-errors, no unstable case). Run with a clean working tree (the report records commit `c49d451`; see the hash note below). Device-set precision/recall 100 %/100 %,
-every answer passed claim validation, and every run recorded a plan with its evidence gathered.
+errors, no unstable case), on the final code (see the hash note below). Device-set precision/recall 100 %/100 %, and
+every answer passed claim validation. A plan was recorded in 137 of 138 runs: in one run the model skipped the planning
+call (it is offered, not forced, because the configured model rejects forced tool choice); the system flagged it,
+continued without coverage enforcement, and the answer was still correct.
 
 | Category | Passed | What it covers |
 |---|---|---|
@@ -308,10 +310,16 @@ How to read this honestly:
   no failure mode exists; new questions from real admins are the best next test.
 - Results are for one model on this dataset; the earlier Sonnet run (45/46, one case unmeasured because of a provider
   credit limit, no `src/` changes between its runs, merged by `python -m evals.merge`) predates the target guard.
-- **Hash note:** the evidence reports record the commits they ran on (`c49d451` for the DeepSeek report, `cf40ea4` for the
-  Sonnet one). Git history was rewritten afterwards, before anything was pushed, only to edit commit-message trailers;
-  every tree is byte-identical, and those commits are now `db41fa3` and `73adedc`. The reports are left unedited as
-  recorded output.
+- **This is the second 3x run on the final code.** The first scored 137/138: the one miss was the *scorer* counting a
+  context claim (the model also cited an unfiltered 10-device result, "out of 10 devices in the fleet") as devices that
+  matched, although the answer named exactly the right 3. The scorer now treats claims on unfiltered results as
+  population context, not matches (regression tests in `tests/test_oracle.py` also confirm a sole wrong claim still
+  fails), and the full 3x was rerun rather than patched together.
+- **Hash note:** the evidence reports record the commit they ran on. The DeepSeek report records `c85bb27`: it ran on
+  that commit plus the fixes committed right after it (evidence-header wording, re-proposal after rejection, the
+  prompt rule on numbers, the scorer rule). The Sonnet report records `cf40ea4`; git history was rewritten once, before
+  anything was pushed, only to edit commit-message trailers, every tree is byte-identical, and that commit is now
+  `73adedc`. The reports are left unedited as recorded output.
 - Earlier live runs also found: an unsupported "per company policy" ticket note written by the model (see Guardrails),
   and a provider that rejects forced `tool_choice` for the planning call.
 
@@ -323,3 +331,9 @@ How to read this honestly:
 - Trend thresholds are judgement calls documented above; a borderline device (e.g. 43 % of snapshots over the RAM
   threshold) is deliberately reported as *intermittent*, not hidden.
 - Only the proposals' supporting facts are verified; the wisdom of acting on them is the approver's call.
+- **The one-paragraph summary at the top of an answer is model-written and only partly verified.** Device lists, counts,
+  citations and the evidence tables below it are machine-checked or rendered from tool data; other numbers or wording in
+  the summary are not. A tester on a Mac caught the summary saying "all 10 laptops were checked" when the evidence said
+  10 *devices* (9 laptops, 1 desktop). The prompt now tells the model to state only numbers that appear in tool
+  results, but that is a prompt rule, not enforcement. A reliable check needs the summary to be generated from the
+  claims instead of free text, which was out of scope; read the evidence block, not just the summary, when it matters.
